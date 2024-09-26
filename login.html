@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="module">
+        
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.8.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.8.0/firebase-auth.js";
+        import { firebaseConfig } from './firebaseConfig.js'; 
+
+       
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const buttonLogin = document.getElementById("login-button");
+            
+            buttonLogin.addEventListener('click', () => {
+                const email = document.querySelector('input[type="email"]').value;
+                const password = document.querySelector('input[type="password"]').value;
+                
+                signInWithEmailAndPassword(auth, email, password)
+                    .then((userCredential) => {
+                        // Signed in 
+                        const user = userCredential.user;
+                        window.location.href = 'dashboard.html';
+                    })
+                    .catch((error) => {
+                        const errorCode = error.code;
+                        const errorMessage = error.message;
+                        alert('Login failed: ' + errorMessage);
+                    });
+            });
+        });
+    </script>
+</head>
+<body>
+    <h2 class="app-name">SpeakSimpler</h2>
+    <div class="login">
+        <h2 class="login-heading">Admin Login</h2>
+        <input type="email" placeholder="Email Address">
+        <input type="password" placeholder="Password">
+        <button id="login-button">Login</button>    
+    </div>
+</body>
+</html>

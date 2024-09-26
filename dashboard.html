@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.8.0/firebase-app.js";
+        import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.8.0/firebase-auth.js";
+        import { getDatabase, ref, update, onValue, push } from "https://www.gstatic.com/firebasejs/9.8.0/firebase-database.js";
+        import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/9.8.0/firebase-storage.js";
+        import { firebaseConfig } from './firebaseConfig.js'; 
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const database = getDatabase(app);
+        const storage = getStorage(app);
+
+        document.addEventListener('DOMContentLoaded', function () {
+            // Authentication state observer
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    document.getElementById('userEmail').textContent = user.email;
+                    document.getElementById('userName').textContent = user.displayName || 'No Name';
+                    document.getElementById('userPhoto').src = user.photoURL || 'default-profile-picture.png';
+                } else {
+                    window.location.href = 'login.html';
+                }
+            });
+
+            const links = document.querySelectorAll('.side-bar a');
+            const contentSections = document.querySelectorAll('.content section');
+
+            links.forEach(link => {
+                link.addEventListener('click', e => {
+                    e.preventDefault(); 
+                    const targetId = link.getAttribute('href').substring(1); 
+
+                    contentSections.forEach(section => {
+                        section.classList.remove('active'); 
+                    });
+
+                    document.getElementById(targetId).classList.add('active'); 
+
+                    links.forEach(l => l.classList.remove('active')); 
+                    link.classList.add('active'); 
+                });
+            });
+
+            const logoutButton = document.getElementById('logoutButton');
+            logoutButton.addEventListener('click', () => {
+                signOut(auth).then(() => {
+                    window.location.href = 'login.html';
+                }).catch((error) => {
+                    console.error('Sign out error:', error);
+                });
+            });
+
+            const openFormButton = document.getElementById('openFormButton');
+            const closeFormButton = document.getElementById('closeFormButton');
+            const formContainer = document.getElementById('formContainer');
+
+            openFormButton.addEventListener('click', () => {
+                formContainer.style.display = 'flex'; 
+            });
+
+            closeFormButton.addEventListener('click', () => {
+                formContainer.style.display = 'none'; 
+            });
+
+            window.addEventListener('click', (event) => {
+                if (event.target === formContainer) {
+                    formContainer.style.display = 'none'; 
+                }
+            });
+
+            document.getElementById('gestureForm').addEventListener('submit', async function (event) {
+                event.preventDefault();
+                
+                const b_title = document.getElementById('title').value.trim();
+                const c_text = document.getElementById('phrase').value.trim();
+                const imageInput = document.getElementById('image');
+                let imageUrl = '';
+                
+                if (!b_title || !c_text) {
+                    alert('Please fill out all fields.');
+                    return;
+                }
+                
+                if (imageInput.files.length > 0) {
+                    const imageFile = imageInput.files[0];
+                    const imageRef = storageRef(storage, 'images/' + imageFile.name);
+                    await uploadBytes(imageRef, imageFile);
+                    imageUrl = await getDownloadURL(imageRef);
+                }
+                const data = {
+                    b_title,
+                    c_text,
+                    e_image: imageUrl
+                };
+                
+                const key = document.getElementById('gestureForm').getAttribute('data-edit-key');
+                if (key) {
+                    
+                    // Editing an existing item
+                    const actionRef = ref(database, 'Actions/' + key);
+                    update(actionRef, data)
+                    .then(() => {
+                        formContainer.style.display = 'none';
+                        loadActions();
+                        document.getElementById('gestureForm').removeAttribute('data-edit-key');
+                    })
+                    .catch((error) => {
+                        console.error('Error updating item:', error);
+                    });
+                } else {
+
+                    // Adding a new item
+                    const newGestureRef = push(ref(database, 'Actions'));
+                    data.id_no = newGestureRef.key;
+                    update(newGestureRef, data)
+                    .then(() => {
+                        formContainer.style.display = 'none';
+                        loadActions();
+                    })
+                    .catch((error) => {
+                        console.error('Error adding item:', error);
+                    });
+                }
+            });
+            
+            function loadActions() {
+                const actionsRef = ref(database, 'Actions');
+                const table = document.querySelector('#add-elements table');
+                
+                // Clear existing rows except the header
+                table.querySelectorAll('tr:not(:first-child)').forEach(row => row.remove());
+                
+                onValue(actionsRef, (snapshot) => {
+                    snapshot.forEach(actionSnapshot => {
+                        const action = actionSnapshot.val();
+                        const row = table.insertRow();
+                        const idCell = row.insertCell();
+                        idCell.textContent = action.id_no;
+                        const titleCell = row.insertCell();
+                        titleCell.textContent = action.b_title;
+                        const phraseCell = row.insertCell();
+                        phraseCell.textContent = action.c_text;
+                        const imageCell = row.insertCell();
+                        if (action.e_image) {
+                            const img = document.createElement('img');
+                            img.src = action.e_image;
+                            img.style.width = '100px';
+                            imageCell.appendChild(img);
+                        }
+
+            const actionsCell = row.insertCell();
+            actionsCell.innerHTML = `
+                <button class="btn-edit" data-key="${actionSnapshot.key}">Edit</button>
+                <button class="btn-delete" data-key="${actionSnapshot.key}">Delete</button>
+            `;
+        });
+
+        // Add event listeners for edit buttons
+        document.querySelectorAll('.btn-edit').forEach(button => {
+            button.addEventListener('click', () => {
+                const key = button.getAttribute('data-key');
+                const actionRef = ref(database, 'Actions/' + key);
+                onValue(actionRef, (snapshot) => {
+                    const action = snapshot.val();
+                    document.getElementById('title').value = action.b_title;
+                    document.getElementById('phrase').value = action.c_text;
+                    // Set selected category if necessary
+                    // document.getElementById('category').value = action.category;
+
+                    // Update form action for editing
+                    document.getElementById('gestureForm').setAttribute('data-edit-key', key);
+                    document.getElementById('formContainer').style.display = 'flex';
+                });
+            });
+        });
+
+        // Add event listeners for delete buttons
+        document.querySelectorAll('.btn-delete').forEach(button => {
+    button.addEventListener('click', () => {
+        const key = button.getAttribute('data-key');
+        console.log('Delete button clicked for key:', key); // Debugging line
+        const actionRef = ref(database, 'Actions/' + key);
+        if (confirm('Are you sure you want to delete this item?')) {
+            actionRef.remove()
+            .then(() => {
+    console.log('Item deleted, reloading actions...'); // Debugging line
+    loadActions(); // Reload actions
+})
+
+                .catch((error) => {
+                    console.error('Error deleting item:', error);
+                });
+        }
+    });
+});
+
+    });
+}
+
+
+
+            loadActions();
+        });
+    </script>
+</head>
+<body class="dashboard">
+    <div class="side-bar">
+        <h2 class="side-heading">Dashboard</h2>
+        <div class="avatar-container">
+            <img id="userPhoto" alt="User Photo" class="avatar">
+            <div class="user-info">
+                <span id="userName" class="user-name">User Name</span>
+                <span id="userEmail" class="user-email">User Email</span>
+            </div>
+        </div>
+        <a class="active" href="#home"><i class="fa fa-fw fa-home"></i> Home</a>
+        <a href="#admin-settings"><i class="fa fa-fw fa-user"></i> My Profile</a>
+        <a href="#manage-account"><i class="fa fa-fw fa-user"></i> Manage Accounts</a>
+        <a href="#add-elements"><i class="fa fa-fw fa-plus"></i> Add Elements</a>
+        <button id="logoutButton"> Logout</button>
+    </div>
+    
+    <div class="content">
+        <section id="home" class="active">
+            <h2>Welcome Admin</h2>
+        </section>
+        
+        <section id="manage-account">
+            <h2 class="mng-acc">Manage Accounts</h2>
+            <table>
+                <tr>
+                    <td>Identifier</td>
+                    <td>Providers</td>
+                    <td>Created</td>
+                    <td>Signed In</td>
+                    <td>User UID</td>
+                    <td>Actions</td>
+                </tr>
+                <!-- Example row (remove when populated with actual data) -->
+                <tr>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="header-action">
+                        <button class="btn-edit">Edit</button>
+                        <button class="btn-delete">Delete</button>
+                    </td>
+                </tr>
+            </table>
+        </section>
+        
+        <section id="add-elements">
+            <h2 class="ges-symbols">Gestures and Symbols</h2>
+            <button id="openFormButton">Add Gestures and Symbols</button>
+            <div id="formContainer" class="form-container">
+                <form id="gestureForm" class="form">
+                    <span id="closeFormButton" class="close">&times;</span>
+                    <h3 class="ges-symbols">Add Gestures and Symbols</h3>
+                    <label for="title" class="ges-symbols">Enter Title:</label>
+                    <input type="text" id="title" name="title" required>
+                    
+                    <label for="phrase" class="ges-symbols">Enter Phrase:</label>
+                    <input type="text" id="phrase" name="phrase" required>
+                    
+                    <label for="image" class="ges-symbols">Add Image:</label>
+                    <input type="file" id="image" name="image">
+        
+                    <label for="category" class="ges-symbols">Select Category:</label>
+                    <select id="category" name="category">
+                        <option value="Action">Action</option>
+                        <option value="Common">Common</option>
+                        <option value="Conversations">Conversations</option>
+                        <option value="Feelings">Feelings</option>
+                        <option value="Greetings">Greetings</option>
+                        <option value="People">People</option>
+                        <option value="Registered User">Registered User</option>
+                    </select>
+                    
+                    <button type="submit">Submit</button>
+                </form>
+            </div>
+            <table>
+                <tr>
+                    <td>ID No</td>
+                    <td>Title</td>
+                    <td>Phrase</td>
+                    <td>Image</td>
+                    <td>Actions</td>
+                </tr>
+                <!-- Dynamic content will be inserted here by JavaScript -->
+            </table>
+        </section>
+        
+    </div>
+</body>
+</html>
